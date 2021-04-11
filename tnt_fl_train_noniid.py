@@ -19,7 +19,7 @@ parser.add_argument('--his', type=str, required=True)
 parser.add_argument('--num_users', default=10, type=int, )
 parser.add_argument('--epochs', default=100, help='epoch', type=int)
 parser.add_argument('--frac', default=1, type=int)
-parser.add_argument('--local_bs', default=64, type=int)
+parser.add_argument('--local_bs', default=128, type=int)
 parser.add_argument('--save', action='store_true', help='save model every 10 epoch')
 parser.add_argument('--GPU', default=0, type=int)
 parser.add_argument('--momentum', default=0.9, type=float)
@@ -35,6 +35,7 @@ parser.add_argument('--resume', '-r', action='store_true',
 parser.add_argument('--model', default='res18_norm', type=str)
 parser.add_argument('--n_class', default=2, type=int, help='class number in each client')
 # parser.add_argument('--num_samples', default=200, type=int)
+parser.add_argument('--g_c', default=10, type=int, help='floating model communication epoch')
 args = parser.parse_args()
 
 
@@ -91,7 +92,7 @@ Model = {
     'alex_norm': AlexNet
 }
 
-net_glob = Model[args.model](10)
+net_glob = Model[args.model](10).half()
 print(net_glob)
 
 # training
@@ -123,7 +124,7 @@ for epoch in range(args.epochs):
     acc_locals_test = {}
     local_zero_rates = []
 
-    print(f'\n | Global Training Round: {epoch} Training {args.his}|\n')
+    print(f'c\n | Global Training Round: {epoch} Training {args.his}|\n')
     m = max(int(args.frac * args.num_users), 1)
     idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
@@ -133,7 +134,7 @@ for epoch in range(args.epochs):
         network, loss_local_train, acc_local_train = local.train(net=client_net[str(idx)].to(device), lr=current_lr)
         # Global TNT weights or Norm Weights
         if args.tntupload:
-            if epoch % 10 == 0:
+            if (epoch+1) % args.g_c == 0:
                 print('floating update')
                 client_upload[str(idx)] = copy.deepcopy(client_net[str(idx)].state_dict())
                 local_zero_rates.append(0)
@@ -161,7 +162,7 @@ for epoch in range(args.epochs):
 
     # update local models
     if args.tntupload:
-        if epoch % 10 == 0:
+        if (epoch+1) % args.g_c == 0:
             glob_agg_num += 1
             print('floating update')
             for idx in idxs_users:
@@ -177,7 +178,7 @@ for epoch in range(args.epochs):
 
     # local testing
     if args.tntupload:
-        if epoch % 10 == 0: # floating update
+        if (epoch+1) % args.g_c == 0: # floating update
             print('floating update')
             print(f'\n |Round {epoch} Global Test {args.his}|\n')
             acc_t, loss_t, best_acc = test_img('all', epoch, client_net['0'], dataset_test, args, best_acc)

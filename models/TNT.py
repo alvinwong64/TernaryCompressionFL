@@ -13,7 +13,7 @@ def normalize_row(target_vector):
     target_hat: the unit vector
     """
 
-    target_hat = target_vector / torch.norm(target_vector, p=2, dim=-1, keepdim=True)
+    target_hat = target_vector / (torch.norm(target_vector, p=2, dim=-1, keepdim=True) + 1e-6)
 
     return target_hat
 
@@ -45,7 +45,7 @@ def similar_cos(w_flatten_f):
     similar_value = temp / torch.sqrt(torch.arange(1, temp.size(-1) + 1).to(temp.device).float())
 
     # similar_value = similar_value[:, 1:]
-    maxValue_conv, maxIndex_conv = torch.max(similar_value, dim=1, keepdim=True)
+    maxValue_conv, maxIndex_conv = torch.max(similar_value, dim=-1, keepdim=True)
 
     return target_hat_sorted_index, similar_value, maxValue_conv, maxIndex_conv
 
@@ -101,10 +101,19 @@ def TNT_convert(weights_f):
 
 # scaling
 def scaling1(kernel_flatten, ternary_vector):
+    
     floating_norm = torch.norm(kernel_flatten, p=2, dim=-1, keepdim=True)
     ternary_norm = torch.norm(ternary_vector, p=2, dim=-1, keepdim=True)
-    scale_num = floating_norm / ternary_norm
-    weights_t = scale_num * ternary_norm
+    scale_num = floating_norm / (ternary_norm + 1e-6)
+    weights_t = scale_num * ternary_vector
+    
+    t_norm = torch.norm(weights_t, p=2, dim=-1, keepdim=True)
+#     tt = (t_norm == floating_norm)
+#     print('jklsjkljklfnl',tt[:10])
+#     print('kkkkkk', t_norm[:10])
+#     print('lllllll', floating_norm[:10])
+#     stop()
+    
     return weights_t
 
 def scaling(kernel_flatten, ternary_vector):
@@ -151,7 +160,7 @@ def scaling(kernel_flatten, ternary_vector):
     return weights_t
 
 
-def kernels_cluster(weights_f, channel=True):
+def kernels_cluster(weights_f, channel=False):
     """
     Output a scaled ternary tensor
     --------------------
@@ -172,12 +181,17 @@ def kernels_cluster(weights_f, channel=True):
         permute_weights = weights_f.reshape(1, -1)
     elif t_dim == 4:  # convolution or FC
         o, i, h_ks, w_ks = weights_f.size()
-#         permute_weights = weights_f.reshape(32, -1)
+#         permute_weights = weights_f.reshape(16, -1)
         if channel:  # channel fiber
-            permute_weights = weights_f.permute(0, 2, 3, 1)  # (o, i, h, w) ==> (o, h, w, I)
-#             o, h_ks, w_ks, i = permute_weights.size()
-            permute_weights = permute_weights.reshape(o * h_ks * w_ks, i)  # (o, h, w, I) ==> (o*h*w, I)
-#         else:  # frontal slice
+            permute_weights = weights_f.permute(0, 2, 3, 1)  # (o, i, h, w) ==> (o, h, w, i)
+            o, h_ks, w_ks, i = permute_weights.size()
+            permute_weights = weights_f.reshape(o* h_ks* w_ks, i)
+        else:
+            o, i, h_ks, w_ks = weights_f.size()
+            permute_weights = weights_f.reshape(o, -1)  # (o, i, h, w) ==> (o, h, w, i)
+            
+            # (0, h, w, i) ==> (o, i, h, w)
+#                 permute_weights = permute_weights.reshape(o * h_ks * w_ks, i)  # (o, h, w, I) ==> (o * h * w, i)
 #             permute_weights = weights_f.reshape(o * i, h_ks * w_ks)  # (o, i, h, w) ==> (o * i, h * w)
     else:
         permute_weights = weights_f
@@ -189,10 +203,32 @@ def kernels_cluster(weights_f, channel=True):
     if t_dim == 1:
         weights_t = weights_t.reshape(bias_o)
     elif t_dim == 4:
-#         weights_t = weights_t.reshape(o, i, h_ks, w_ks)
         if channel:
             weights_t = weights_t.reshape(o, h_ks, w_ks, i)
-            weights_t = weights_t.permute(0, 3, 1, 2)  # (0, h, w, i) ==> (o, i, h, w)
-#         else:
-#             weights_t = weights_t.reshape(o, i, h_ks, w_ks)
+            weights_t = weights_t.permute(0, 3, 1, 2) # (0, h, w, i) ==> (o, i, h, w)
+        else:
+            weights_t = weights_t.reshape(o, i, h_ks, w_ks)
     return weights_t
+
+
+def image_tnt(image_tensor):
+    """
+    Output a scaled ternary image tensor
+    --------------------
+    Inputs
+
+    image_tensor: input image tensor for training, with dimension of (b,c,h,w)
+    ---------------------
+    Output
+
+    ternary_image: converted to ternary image
+    """
+    b, c, h, w = image_tensor.size()
+    permute_images = image_tensor.reshape(b, -1)  # (b, c, h, w) ==> (b,flatten)
+    ternary_images, cosine_similarity = TNT_convert(permute_images)
+    ternary_images = scaling1(permute_images, ternary_images)
+    ternary_images = ternary_images.reshape(b, c, h, w)
+
+    return ternary_images
+
+

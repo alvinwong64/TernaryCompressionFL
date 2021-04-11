@@ -1,6 +1,7 @@
 import numpy as np
 import torch.optim as optim
 import torch
+from models import  TNT
 from models.convert_tnt import *
 from utils import *
 from torch.utils.data import DataLoader, Dataset
@@ -68,8 +69,8 @@ def cifar_extr_noniid(train_dataset, test_dataset, num_users, n_class):
         user_labels = np.array([])
         # randomly pick non-repetitive classes from the dataset
         rand_set = set(np.random.choice(np.unique(idx_shard), n_class, replace=False))
-        print(idx_shard)
-        print(rand_set)
+        # print(idx_shard)
+        # print(rand_set)
         for rand in rand_set:
             # Remove the first occurance of the chosen class
             idx_shard.remove(rand)
@@ -91,9 +92,6 @@ def cifar_extr_noniid(train_dataset, test_dataset, num_users, n_class):
         # print(set(labels_test_raw[dict_users_test[i].astype(int)]))
 
     return dict_users_train, dict_users_test
-
-
-
 
     # Previous non iid method
 
@@ -200,10 +198,13 @@ class LocalUpdate(object):
             batch_acc = 0
             correct = 0
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
-                images = images.to(torch.device("cuda:" + str(self.args.GPU)))
+                if self.args.tntupload:
+                    images = TNT.image_tnt(images)
+                images = images.to(torch.device("cuda:" + str(self.args.GPU))).half()
                 labels = labels.to(torch.device("cuda:" + str(self.args.GPU)))
                 net.zero_grad()
                 log_probs = net(images)
+                # print(type(log_probs))
                 loss = self.loss_func(log_probs, labels)
                 loss.backward()
                 optimizer.step()
@@ -239,7 +240,9 @@ def test_img(idxs, epoch, net_g, datatest, args, best_acc, dict_users_test=None)
 
     print('Client {} Testing on GPU {}.'.format(idxs, args.GPU))
     for idx, (data, target) in enumerate(data_loader):
-        data = data.to(torch.device("cuda:" + str(args.GPU)))
+        if args.tntupload:
+            data = TNT.image_tnt(data)
+        data = data.to(torch.device("cuda:" + str(args.GPU))).half()
         target = target.to(torch.device("cuda:" + str(args.GPU)))
         log_probs = net_g(data)
 
@@ -261,7 +264,8 @@ def test_img(idxs, epoch, net_g, datatest, args, best_acc, dict_users_test=None)
         print('Saving..')
         state = {
             # 'net': net_g.get_tnt(),  # net_g.get_tnt(),  # 'net':net.get_tnt() for tnt network // net.state_dict()
-            'net': net_g.state_dict(),  # net_g.get_tnt(),  # 'net':net.get_tnt() for tnt network // net.state_dict()
+            'net': net_g.get_tnt() if args.tntupload else net_g.state_dict(),
+            # net_g.get_tnt(),  # 'net':net.get_tnt() for tnt network // net.state_dict()
             'acc': acc * 100.,
             'epoch': epoch,
         }
@@ -273,11 +277,11 @@ def test_img(idxs, epoch, net_g, datatest, args, best_acc, dict_users_test=None)
     if args.save:
         dict_name = args.his.split('.')[0]
         path = os.path.join('./saved/', '{}/epoch_{}_{}.ckpt'.format(dict_name, epoch, args.his))
-        if epoch % 10 == 0:
+        if epoch % 10 == 0 :
             print('Saving..')
             state = {
                 # 'net': net_g.get_tnt(),
-                'net': net_g.state_dict(),
+                'net': net_g.get_tnt() if args.tntupload else net_g.state_dict(),
                 # net_g.get_tnt(),  # 'net':net.get_tnt() for tnt network // net.state_dict()
                 'acc': acc * 100.,
                 'epoch': epoch,
@@ -303,10 +307,12 @@ def ternary_convert(network):
 
     for name, module in network.named_modules():  # calculating errors between normal weights and errors
         if isinstance(module, TNTConv2d):
+            #             print('convolution ternary')
             w[name + str('.weight')] = KernelsCluster.apply(module.weight)  # tnt
             w_error[name + str('.weight')] -= w[name + str('.weight')]  # errors
 
         if isinstance(module, TNTLinear):
+            #             print('linear ternary')
             w[name + str('.weight')] = KernelsCluster.apply(module.weight)
             w_error[name + str('.weight')] -= w[name + str('.weight')]
 
@@ -315,6 +321,9 @@ def ternary_convert(network):
 
     net_error.load_state_dict(w_error, strict=False)
     tnt_error_dict = net_error.state_dict()
+    t = zero_rates(tnt_weights_dict)
+    print('[INFO] zero rates is ', t)
+
     return tnt_weights_dict, tnt_error_dict
 
 
@@ -346,7 +355,7 @@ def FedAvg(w_dict, acc_dict, num):
     for k in w_avg.keys():
         for i in range(1, len(w)):
             w_avg[k] += w[i][k]
-        w_avg[k] = torch.div(w_avg[k], len(w))
+        w_avg[k] = torch.div(w_avg[k], float(len(w)))
 
     total_params = 0
     zero_params = 0
@@ -372,6 +381,7 @@ def zero_rates(weight_dict):
     total_params = 0
     zero_params = 0
     for key in weight_dict.keys():
+        #         print(key)
         zero_params += (weight_dict[key].view(-1) == 0).sum().item()
         total_params += len(weight_dict[key].view(-1))
     return (zero_params / total_params)

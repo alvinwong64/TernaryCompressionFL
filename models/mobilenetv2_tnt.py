@@ -18,17 +18,17 @@ class Block(nn.Module):
 
         planes = expansion * in_planes
         self.conv1 = TNTConv2d(in_planes, planes, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, groups=planes, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn1 = TNTBatchNorm2d(planes)
+        self.conv2 = TNTConv2d(planes, planes, kernel_size=3, stride=stride, padding=1, groups=planes, bias=False)
+        self.bn2 = TNTBatchNorm2d(planes)
         self.conv3 = TNTConv2d(planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn3 = nn.BatchNorm2d(out_planes)
+        self.bn3 = TNTBatchNorm2d(out_planes)
 
         self.shortcut = nn.Sequential()
         if stride == 1 and in_planes != out_planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False),
-                nn.BatchNorm2d(out_planes),
+                TNTConv2d(in_planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False),
+                TNTBatchNorm2d(out_planes),
             )
 
     def forward(self, x):
@@ -52,12 +52,12 @@ class MobileNetV2_tnt(nn.Module):
     def __init__(self, num_classes=10):
         super(MobileNetV2_tnt, self).__init__()
         # NOTE: change conv1 stride 2 -> 1 for CIFAR10
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.conv1 = TNTConv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = TNTBatchNorm2d(32)
         self.layers = self._make_layers(in_planes=32)
         self.conv2 = TNTConv2d(320, 1280, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn2 = nn.BatchNorm2d(1280)
-        self.linear = nn.Linear(1280, num_classes)
+        self.bn2 = TNTBatchNorm2d(1280)
+        self.linear = TNTLinear(1280, num_classes)
 
     def _make_layers(self, in_planes):
         layers = []
@@ -87,10 +87,10 @@ class MobileNetV2_tnt(nn.Module):
                 w[name + str('.weight')] = KernelsCluster.apply(module.weight)
         return w
 
-def test():
-    net = MobileNetV2()
-    x = torch.randn(2,3,32,32)
-    y = net(x)
-    print(y.size())
+# def test():
+#     net = MobileNetV2()
+#     x = torch.randn(2,3,32,32)
+#     y = net(x)
+#     print(y.size())
 
 # test()
