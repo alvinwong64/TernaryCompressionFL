@@ -31,6 +31,7 @@ def cifar_iid(dataset, num_users):
 
 
 def cifar_extr_noniid(train_dataset, test_dataset, num_users, n_class):
+    print(train_dataset.Features)
     num_shards_train = num_users * n_class  # minimum shard needed
     num_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
@@ -80,7 +81,7 @@ def cifar_extr_noniid(train_dataset, test_dataset, num_users, n_class):
                 (dict_users_train[i], idxs[rand * 5000:(rand + 1) * 5000]), axis=0)
             user_labels = np.concatenate((user_labels, labels[rand * 5000:(rand + 1) * 5000]),
                                          axis=0)
-
+        print((dict_users_train[i][0]))
         user_labels_set = set(user_labels)
         # print(user_labels_set)
         # print(user_labels)
@@ -173,7 +174,7 @@ class DatasetSplit(Dataset):
 
 
 class LocalUpdate(object):
-    def __init__(self, args, dataset=None, idxs=None, client=None):
+    def  __init__(self, args, dataset=None, idxs=None, client=None):
         self.args = args
         self.loss_func = nn.CrossEntropyLoss()
         self.selected_clients = []
@@ -198,6 +199,7 @@ class LocalUpdate(object):
             batch_acc = 0
             correct = 0
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
+                # print(images[0])
                 if self.args.tntupload:
                     images = TNT.image_tnt(images)
                 images = images.to(torch.device("cuda:" + str(self.args.GPU))).half()

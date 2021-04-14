@@ -11,6 +11,7 @@ import time
 import random
 import numpy as np
 
+
 # from torch.utils.tensorboard import SummaryWriter
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
@@ -66,6 +67,7 @@ dataset_train = torchvision.datasets.CIFAR10(root='/data/datasets/cifar10',
 dataset_test = torchvision.datasets.CIFAR10(root='/data/datasets/cifar10',
                                             train=False, download=True,
                                             transform=transform_test)
+print(dataset_train[0])
 
 def random_seed(seed):
     random.seed(seed)

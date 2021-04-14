@@ -223,11 +223,11 @@ def image_tnt(image_tensor):
 
     ternary_image: converted to ternary image
     """
-    b, c, h, w = image_tensor.size()
-    permute_images = image_tensor.reshape(b, -1)  # (b, c, h, w) ==> (b,flatten)
+    c, h, w = image_tensor.size()
+    permute_images = image_tensor.reshape(-1)  # (b, c, h, w) ==> (b,flatten)
     ternary_images, cosine_similarity = TNT_convert(permute_images)
     ternary_images = scaling1(permute_images, ternary_images)
-    ternary_images = ternary_images.reshape(b, c, h, w)
+    ternary_images = ternary_images.reshape(c, h, w)
 
     return ternary_images
 
