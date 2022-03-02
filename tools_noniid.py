@@ -31,7 +31,6 @@ def cifar_iid(dataset, num_users):
 
 
 def cifar_extr_noniid(train_dataset, test_dataset, num_users, n_class):
-    print(train_dataset.Features)
     num_shards_train = num_users * n_class  # minimum shard needed
     num_classes = 10
     num_imgs_perc_test, num_imgs_test_total = 1000, 10000
@@ -185,7 +184,7 @@ class LocalUpdate(object):
         net.train()
         # train and update
         optimizer = torch.optim.SGD(net.parameters(),
-                                    lr=self.args.lr,
+                                    lr=lr,
                                     momentum=self.args.momentum,
                                     weight_decay=self.args.weight_decay)
         #         optimizer = torch.optim.Adam(net.parameters(), lr=self.args.lr)
@@ -200,10 +199,10 @@ class LocalUpdate(object):
             correct = 0
             for batch_idx, (images, labels) in enumerate(self.ldr_train):
                 # print(images[0])
-                if self.args.tntupload:
+                if self.args.tnt_image:
                     images = TNT.image_tnt(images)
                 images = images.to(torch.device("cuda:" + str(self.args.GPU))).half()
-                labels = labels.to(torch.device("cuda:" + str(self.args.GPU)))
+                labels = labels.to(torch.device("cuda:" + str(self.args.GPU))).long()
                 net.zero_grad()
                 log_probs = net(images)
                 # print(type(log_probs))
@@ -235,14 +234,12 @@ def test_img(idxs, epoch, net_g, datatest, args, best_acc, dict_users_test=None)
     test_loss = 0
     correct = 0
     total = 0
-    if idxs == 'all':
-        data_loader = DataLoader(datatest, batch_size=args.bs)
-    else:
-        data_loader = DataLoader(DatasetSplit(datatest, np.int_(dict_users_test[idxs])), batch_size=args.bs)
+    data_loader = DataLoader(datatest, batch_size=args.bs)
+
 
     print('Client {} Testing on GPU {}.'.format(idxs, args.GPU))
     for idx, (data, target) in enumerate(data_loader):
-        if args.tntupload:
+        if args.tnt_image:
             data = TNT.image_tnt(data)
         data = data.to(torch.device("cuda:" + str(args.GPU))).half()
         target = target.to(torch.device("cuda:" + str(args.GPU)))
@@ -317,6 +314,7 @@ def ternary_convert(network):
             #             print('linear ternary')
             w[name + str('.weight')] = KernelsCluster.apply(module.weight)
             w_error[name + str('.weight')] -= w[name + str('.weight')]
+
 
     network.load_state_dict(w, strict=False)  # load tnt to model
     tnt_weights_dict = network.state_dict()  # creating a tensor form dict

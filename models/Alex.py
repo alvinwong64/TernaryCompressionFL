@@ -10,7 +10,7 @@ class AlexNet_tnt(nn.Module):
     def __init__(self, num_classes=10, tnt_state=False):
         super(AlexNet_tnt, self).__init__() 
         self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=5, stride=1, padding=2),
+            TNTConv2d(3, 64, kernel_size=5, stride=1, padding=2),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
             TNTConv2d(64, 192, kernel_size=5, stride=1, padding=2, bias=True),
@@ -33,7 +33,7 @@ class AlexNet_tnt(nn.Module):
             nn.Dropout(),
 #             TNTLinear(4096, 4096),
 #             nn.ReLU(inplace=True),
-            nn.Linear(256, num_classes),
+            TNTLinear(256, num_classes),
         )
         
     def get_tnt(self):

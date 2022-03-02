@@ -1,5 +1,6 @@
 # coding=utf-8
 import torch
+import torch.nn.functional as F
 def normalize_row(target_vector):
     """
     convert each filter in a kernel to a unit vector
@@ -108,59 +109,54 @@ def scaling1(kernel_flatten, ternary_vector):
     weights_t = scale_num * ternary_vector
     
     t_norm = torch.norm(weights_t, p=2, dim=-1, keepdim=True)
-#     tt = (t_norm == floating_norm)
-#     print('jklsjkljklfnl',tt[:10])
-#     print('kkkkkk', t_norm[:10])
-#     print('lllllll', floating_norm[:10])
+
 #     stop()
     
     return weights_t
 
-def scaling(kernel_flatten, ternary_vector):
-    """
-    Calculating a scaling number to reduce the error between ternary vector
-    and its corresponding floating vector
-    -----------------------
-    Input
-
-    kernel_flatten: floating vector
-    ternary_vector: ternary tensor
-    t_dim: dimension of the floating vector
-    -----------------------
-    Output
-
-    weights_t: scaled ternary tensor with positive and negative scaling number
-    """
-
-    a = kernel_flatten
-    t = ternary_vector
-
-    ap = a.clone()
-    an = a.clone()
-    tp = t.clone()
-    tn = t.clone()
-
-    ap[a < 0.] = 0.
-    an[a > 0.] = 0.
-    tp[t < 0.] = 0.
-    tn[t > 0.] = 0.
-
-    pos_sum_zero_mask = torch.sum(ap, dim=-1, keepdim=True) != 0
-    neg_sum_zero_mask = torch.sum(an, dim=-1, keepdim=True) != 0
-    rp = torch.norm(ap, 2, dim=-1, keepdim=True) / (torch.norm(tp, dim=-1, keepdim=True) + 0.00001)
-    rn = torch.norm(an, 2, dim=-1, keepdim=True) / (torch.norm(tn, dim=-1, keepdim=True) + 0.00001)
-
-    rp = rp * torch.cosine_similarity(ap, tp, dim=-1).unsqueeze(-1)
-    rp = rp * pos_sum_zero_mask
-
-    rn = rn * torch.cosine_similarity(an, tn, dim=-1).unsqueeze(-1)
-    rn = rn * neg_sum_zero_mask
-
-    weights_t = tp * rp + tn * rn
-    return weights_t
-
-
-def kernels_cluster(weights_f, channel=False):
+# def scaling(kernel_flatten, ternary_vector):
+#     """
+#     Calculating a scaling number to reduce the error between ternary vector
+#     and its corresponding floating vector
+#     -----------------------
+#     Input
+#
+#     kernel_flatten: floating vector
+#     ternary_vector: ternary tensor
+#     t_dim: dimension of the floating vector
+#     -----------------------
+#     Output
+#
+#     weights_t: scaled ternary tensor with positive and negative scaling number
+#     """
+#
+#     a = kernel_flatten
+#     t = ternary_vector
+#
+#     ap = a.clone()
+#     an = a.clone()
+#     tp = t.clone()
+#     tn = t.clone()
+#
+#     ap[a < 0.] = 0.
+#     an[a > 0.] = 0.
+#     tp[t < 0.] = 0.
+#     tn[t > 0.] = 0.
+#
+#     pos_sum_zero_mask = torch.sum(ap, dim=-1, keepdim=True) != 0
+#     neg_sum_zero_mask = torch.sum(an, dim=-1, keepdim=True) != 0
+#     rp = torch.norm(ap, 2, dim=-1, keepdim=True) / (torch.norm(tp, dim=-1, keepdim=True) + 0.00001)
+#     rn = torch.norm(an, 2, dim=-1, keepdim=True) / (torch.norm(tn, dim=-1, keepdim=True) + 0.00001)
+#
+#     rp = rp * torch.cosine_similarity(ap, tp, dim=-1).unsqueeze(-1)
+#     rp = rp * pos_sum_zero_mask
+#
+#     rn = rn * torch.cosine_similarity(an, tn, dim=-1).unsqueeze(-1)
+#     rn = rn * neg_sum_zero_mask
+#
+#     weights_t = tp * rp + tn * rn
+#     return weights_t
+def kernels_cluster(weights_f, channel=False, normalize = False):
     """
     Output a scaled ternary tensor
     --------------------
@@ -199,6 +195,8 @@ def kernels_cluster(weights_f, channel=False):
     ternary_weights, cosine_similarity = TNT_convert(permute_weights)  # output the best ternary tensor and its cosine
                                                                        # similarity with floating type
     weights_t = scaling1(permute_weights, ternary_weights)
+    if normalize:
+        weights_t = F.normalize(weights_t, dim=-1)
 
     if t_dim == 1:
         weights_t = weights_t.reshape(bias_o)
@@ -211,7 +209,7 @@ def kernels_cluster(weights_f, channel=False):
     return weights_t
 
 
-def image_tnt(image_tensor):
+def image_tnt(image_tensor,channel=False):
     """
     Output a scaled ternary image tensor
     --------------------
@@ -223,11 +221,20 @@ def image_tnt(image_tensor):
 
     ternary_image: converted to ternary image
     """
-    c, h, w = image_tensor.size()
-    permute_images = image_tensor.reshape(-1)  # (b, c, h, w) ==> (b,flatten)
+    b, c, h, w = image_tensor.size()
+
+    #per iamge
+    # permute_images = image_tensor.reshape(b,-1)  # (b, c, h, w) ==> (b,flatten)
+
+    #By channel
+    # permute_weights = image_tensor.permute(0, 2, 3, 1)  # (o, i, h, w) ==> (o, h, w, i)
+    permute_images = image_tensor.reshape(b*c,-1)  # (b, c, h, w) ==> (b,flatten)
     ternary_images, cosine_similarity = TNT_convert(permute_images)
     ternary_images = scaling1(permute_images, ternary_images)
-    ternary_images = ternary_images.reshape(c, h, w)
+    # ternary_images = F.normalize(ternary_images)
+    ternary_images = ternary_images.reshape(b, c, h, w)
+    # ternary_images= ternary_images.permute(0,3,1,2)
+#     print(ternary_images[1])
 
     return ternary_images
 

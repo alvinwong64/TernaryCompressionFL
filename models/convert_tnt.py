@@ -25,6 +25,7 @@ class KernelsCluster(torch.autograd.Function):
 
     
 class TNTConv2d(nn.Conv2d):
+
     def _conv_forward(self, input, weight, bias):
         if self.padding_mode != 'zeros':
             return F.conv2d(F.pad(input, self._reversed_padding_repeated_twice, mode=self.padding_mode),
@@ -33,7 +34,7 @@ class TNTConv2d(nn.Conv2d):
         return F.conv2d(input, weight, bias, self.stride,
                         self.padding, self.dilation, self.groups)
     
-    def forward(self, x):
+    def forward(self, x, normalize=False):
         w = KernelsCluster.apply(self.weight) # .to(self.weight.device)
         if self.bias is not None:
             b = KernelsCluster.apply(self.bias)
@@ -53,7 +54,7 @@ class TNTConv2d(nn.Conv2d):
 
 
 class TNTLinear(nn.Linear):
-    def forward(self, x):
+    def forward(self, x, normalize = False):
         w = KernelsCluster.apply(self.weight)
         b = KernelsCluster.apply(self.bias)
         return F.linear(x, w, b)

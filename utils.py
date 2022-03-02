@@ -4,6 +4,7 @@
     - progress_bar: progress bar mimic xlua.progress.
 '''
 import os
+import shutil
 import sys
 import time
 import math
@@ -44,7 +45,7 @@ def init_params(net):
 
 # _, term_width = os.popen('stty size', 'r').read().split()  # Can only run in Linux
 # term_width = int(term_width)
-term_width = os.get_terminal_size().columns
+term_width = shutil.get_terminal_size().columns
 
 TOTAL_BAR_LENGTH = 65.
 last_time = time.time()

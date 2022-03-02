@@ -35,8 +35,10 @@ parser.add_argument('--resume', '-r', action='store_true',
                     help='resume from checkpoint')
 parser.add_argument('--model', default='res18_norm', type=str)
 parser.add_argument('--n_class', default=2, type=int, help='class number in each client')
+parser.add_argument('--tnt_image', action='store_true', help='tnt image')
+parser.add_argument('--iid', action='store_true', help='iid dataset')
 # parser.add_argument('--num_samples', default=200, type=int)
-parser.add_argument('--g_c', default=10, type=int, help='floating model communication epoch')
+# parser.add_argument('--g_c', default=10, type=int, help='floating model communication epoch')
 args = parser.parse_args()
 
 
@@ -67,7 +69,6 @@ dataset_train = torchvision.datasets.CIFAR10(root='/data/datasets/cifar10',
 dataset_test = torchvision.datasets.CIFAR10(root='/data/datasets/cifar10',
                                             train=False, download=True,
                                             transform=transform_test)
-print(dataset_train[0])
 
 def random_seed(seed):
     random.seed(seed)
@@ -76,10 +77,13 @@ def random_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 random_seed(80)
+if args.iid:
+    dict_users_train = cifar_iid(dataset_train, args.num_users)
+else:
+    # train_dataset, test_dataset, num_users, n_class, num_samples, rate_unbalance
+    dict_users_train, dict_users_test = cifar_extr_noniid(dataset_train, dataset_test,
+                                                          args.num_users, args.n_class)
 
-# train_dataset, test_dataset, num_users, n_class, num_samples, rate_unbalance
-dict_users_train, dict_users_test = cifar_extr_noniid(dataset_train, dataset_test,
-                                                      args.num_users, args.n_class)
 
 # Model
 print('==> Building model..')
@@ -89,9 +93,13 @@ Model = {
     'mobilev2_tnt': MobileNetV2_tnt,
     'mobilev2_norm': MobileNetV2,
     'res18_tnt': ResNet_TNT18,
+    'res50_tnt': ResNet_TNT50,
     'res18_norm': ResNet18,
+    'res50_norm': ResNet50,
     'alex_tnt' : AlexNet_tnt,
-    'alex_norm': AlexNet
+    'alex_norm': AlexNet,
+    # 'google_tnt': GoogLeNet_tnt,
+    # 'google_norm': GoogLeNet
 }
 
 net_glob = Model[args.model](10).half()
@@ -132,22 +140,24 @@ for epoch in range(args.epochs):
 
     # training
     for idx in idxs_users:
-        local = LocalUpdate(args=args, dataset=dataset_train, idxs=np.int_(dict_users_train[idx]), client=idx)
+        locals = LocalUpdate(args=args, dataset=dataset_train, idxs=dict_users_train[idx], client=idx) if args.iid else LocalUpdate(args=args, dataset=dataset_train, idxs=np.int_(dict_users_train[idx]), client=idx)
         network, loss_local_train, acc_local_train = local.train(net=client_net[str(idx)].to(device), lr=current_lr)
         # Global TNT weights or Norm Weights
         if args.tntupload:
-            if (epoch+1) % args.g_c == 0:
-                print('floating update')
-                client_upload[str(idx)] = copy.deepcopy(client_net[str(idx)].state_dict())
-                local_zero_rates.append(0)
-            else:
-                print('ternary update')
-                w_tnt, local_error = ternary_convert(copy.deepcopy(client_net[str(idx)]))
-                client_local[str(idx)] = copy.deepcopy(local_error)
-                client_upload[str(idx)] = copy.deepcopy(w_tnt)
-                z_r = zero_rates(w_tnt)
-                local_zero_rates.append(z_r)
-                print('Client {} zero rate {:.2%}'.format(idx, z_r))
+            # if (epoch+1) % args.g_c == 0:
+            #     print('floating update')
+            #     client_upload[str(idx)] = copy.deepcopy(client_net[str(idx)].state_dict())
+            #     local_zero_rates.append(0)
+            # else:
+            print('ternary update')
+            w_tnt, local_error = ternary_convert(copy.deepcopy(client_net[str(idx)]))
+            print(w_tnt)
+
+            client_local[str(idx)] = copy.deepcopy(local_error)
+            client_upload[str(idx)] = copy.deepcopy(w_tnt)
+            z_r = zero_rates(w_tnt)
+            local_zero_rates.append(z_r)
+            print('Client {} zero rate {:.2%}'.format(idx, z_r))
         else:
             client_upload[str(idx)] = copy.deepcopy(client_net[str(idx)].state_dict())
 
@@ -164,44 +174,33 @@ for epoch in range(args.epochs):
 
     # update local models
     if args.tntupload:
-        if (epoch+1) % args.g_c == 0:
-            glob_agg_num += 1
-            print('floating update')
-            for idx in idxs_users:
-                client_net[str(idx)].load_state_dict(glob_avg)
-        else:
-            for idx in idxs_users:
-                client_net[str(idx)] = rec_w(copy.deepcopy(glob_avg),
-                                             copy.deepcopy(client_local[str(idx)]),
-                                             client_net[str(idx)])
+        # if (epoch+1) % args.g_c == 0:
+        #     glob_agg_num += 1
+        #     print('floating update')
+        #     for idx in idxs_users:
+        #         client_net[str(idx)].load_state_dict(glob_avg)
+        # else:
+        for idx in idxs_users:
+            client_net[str(idx)] = rec_w(copy.deepcopy(glob_avg),
+                                         copy.deepcopy(client_local[str(idx)]),
+                                         client_net[str(idx)])
     else:
         for idx in idxs_users:
             client_net[str(idx)].load_state_dict(glob_avg)
 
-    # local testing
-    if args.tntupload:
-        if (epoch+1) % args.g_c == 0: # floating update
-            print('floating update')
-            print(f'\n |Round {epoch} Global Test {args.his}|\n')
-            acc_t, loss_t, best_acc = test_img('all', epoch, client_net['0'], dataset_test, args, best_acc)
-            test_acc.append(acc_t)
-            test_loss.append(loss_t)
-        else:
-            print(f'\n |Round {epoch} Client Test {args.his}|\n')
-            client_acc = []
-            client_loss = []
-            for idx in idxs_users:
-                acc_t, loss_t, best_acc = test_img(idx, epoch, client_net[str(idx)],
-                                                   dataset_test, args, best_acc, dict_users_test)
-                client_acc.append(acc_t)
-                client_loss.append(loss_t)
-            test_acc.append(sum(client_acc) / len(idxs_users))
-            test_loss.append(sum(client_loss) / len(idxs_users))
-    else:
-        print(f'\n |Round {epoch} Global Test {args.his}|\n')
-        acc_t, loss_t, best_acc = test_img('all', epoch, client_net['0'], dataset_test, args, best_acc)
-        test_acc.append(acc_t)
-        test_loss.append(loss_t)
+    # Testing
+
+    print(f'\n |Round {epoch} Global Test {args.his}|\n')
+    client_acc = []
+    client_loss = []
+    for idx in idxs_users:
+        acc_t, loss_t, best_acc = test_img(idx, epoch, client_net[str(idx)],
+                                           dataset_test, args, best_acc)
+        client_acc.append(acc_t)
+        client_loss.append(loss_t)
+    test_acc.append(sum(client_acc) / len(idxs_users))
+    test_loss.append(sum(client_loss) / len(idxs_users))
+
 
     # training info update
     avg_acc_train = sum(acc_locals_train.values()) / len(acc_locals_train.values())
